@@ -150,7 +150,10 @@ fi
 echo "[5e/6] Checking voice runtime prerequisites..."
 
 read_toml_string() {
-    awk -F'"' "/^$1 = / {print \$2; exit}" "$CONFIG_DIR/geniepod.toml" 2>/dev/null
+    # Tolerate read failure (e.g. /etc/geniepod/geniepod.toml is chmod 600 and
+    # this script is being run without sudo). On failure we just use the
+    # documented defaults below.
+    awk -F'"' "/^$1 = / {print \$2; exit}" "$CONFIG_DIR/geniepod.toml" 2>/dev/null || true
 }
 
 WHISPER_CLI="$(read_toml_string whisper_cli_path)"
