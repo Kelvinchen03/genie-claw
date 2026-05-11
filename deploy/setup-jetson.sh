@@ -174,6 +174,20 @@ else
     VOICE_MISSING=1
 fi
 
+# alpha.5: whisper-server is preferred for STT (long-running, model stays in
+# GPU memory). Optional in dev hosts where whisper_port = 0 forces CLI mode.
+WHISPER_SERVER="$GENIEPOD_DIR/bin/whisper-server"
+WHISPER_PORT="$(read_toml_string whisper_port)"
+WHISPER_PORT="${WHISPER_PORT:-0}"
+if [ -x "$WHISPER_SERVER" ]; then
+    echo "  OK: whisper-server ($(du -h "$WHISPER_SERVER" | cut -f1)) at $WHISPER_SERVER"
+elif [ "$WHISPER_PORT" != "0" ]; then
+    echo "  MISSING: whisper-server at $WHISPER_SERVER (whisper_port=$WHISPER_PORT — server mode is configured but binary is absent)"
+    VOICE_MISSING=1
+else
+    echo "  (whisper-server not installed; whisper_port=0 so CLI fallback is fine)"
+fi
+
 if [ -f "$WHISPER_MODEL" ]; then
     echo "  OK: $(basename "$WHISPER_MODEL") ($(du -h "$WHISPER_MODEL" | cut -f1))"
 else
@@ -230,7 +244,7 @@ fi
 
 # Enable core services. genie-audio runs the I2S/AHUB route setup at boot
 # (no-op if /opt/geniepod/bin/genie-audio-init is missing, see ConditionPathExists).
-for svc in homeassistant genie-audio genie-llm genie-core genie-governor genie-health genie-api genie-mqtt; do
+for svc in homeassistant genie-audio genie-whisper genie-llm genie-core genie-governor genie-health genie-api genie-mqtt; do
     if sudo systemctl enable "$svc.service" 2>/dev/null; then
         echo "  Enabled: $svc"
     else

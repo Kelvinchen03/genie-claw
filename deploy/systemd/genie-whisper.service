@@ -1,0 +1,30 @@
+[Unit]
+Description=GeniePod Whisper STT Server (whisper.cpp HTTP server)
+Documentation=https://github.com/ggml-org/whisper.cpp
+After=network.target
+ConditionPathExists=/opt/geniepod/bin/whisper-server
+
+[Service]
+Type=simple
+# Drop page cache before loading model — Jetson NvMap needs contiguous blocks.
+ExecStartPre=/bin/sh -c 'sync && echo 3 > /proc/sys/vm/drop_caches'
+ExecStart=/opt/geniepod/bin/whisper-server \
+    --model ${GENIEPOD_WHISPER_MODEL} \
+    --host 127.0.0.1 \
+    --port 8178 \
+    --threads 2 \
+    --flash-attn \
+    --suppress-nst \
+    --no-speech-thold 0.8
+
+Environment=GENIEPOD_WHISPER_MODEL=/opt/geniepod/models/ggml-tiny.bin
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=120
+
+# GPU needs full system access (same posture as genie-llm).
+ProtectSystem=no
+SupplementaryGroups=video render
+
+[Install]
+WantedBy=geniepod.target

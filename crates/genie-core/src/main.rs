@@ -176,6 +176,7 @@ async fn main() -> Result<()> {
         let voice_cfg = genie_core::voice_loop::VoiceConfig {
             whisper_model: config.core.whisper_model.to_string_lossy().to_string(),
             whisper_cli_path: config.core.whisper_cli_path.to_string_lossy().to_string(),
+            whisper_port: config.core.whisper_port,
             piper_model: config.core.piper_model.to_string_lossy().to_string(),
             piper_path: config.core.piper_path.to_string_lossy().to_string(),
             piper_pipe_mode: config.core.piper_pipe_mode,

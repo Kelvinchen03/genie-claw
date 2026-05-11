@@ -21,9 +21,17 @@
   Jetson-IO overlay, byte-exact verification) lives in the
   `ai-hardware-engineer-roadmap` LyraT-Jetson guide; this page covers only
   the genie-claw integration, reboot persistence, and known limitations.
+- `genie-whisper.service` — long-running `whisper-server` daemon so the
+  Whisper model stays loaded in GPU memory across utterances. Per-call STT
+  cost drops from ~1.5 s CUDA cold-start + inference to ~50 ms HTTP POST +
+  inference. `genie-core` switches between CLI and server mode based on
+  the new `whisper_port` field in `[core]` config (default `8178`, set to
+  `0` to fall back to CLI mode). The `whisper-server` binary is built from
+  `whisper.cpp` (build with `-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=87`
+  on Orin Nano) and lives at `/opt/geniepod/bin/whisper-server`.
 - `setup-jetson.sh` now audits voice-runtime prerequisites (`whisper-cli`,
-  whisper model, `piper`, piper voice + `.onnx.json` sidecar) against the
-  paths in `[core]` config. Voice prereqs are not auto-downloaded — too
+  `whisper-server`, whisper model, `piper`, piper voice + `.onnx.json`
+  sidecar) against the paths in `[core]` config. Voice prereqs are not auto-downloaded — too
   large and license-sensitive — but the install script now surfaces what
   is missing with concrete install pointers instead of letting the first
   voice-loop invocation fail mysteriously. The `geniepod.target` symlink

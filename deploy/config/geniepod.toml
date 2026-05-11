@@ -12,7 +12,11 @@ whisper_model = "/opt/geniepod/models/ggml-tiny.bin"   # alpha.5 default — RTF
                                   # Orin Nano. Swap to ggml-small.bin (488 MB) for higher
                                   # accuracy at ~5x latency, or ggml-base.bin (142 MB) for
                                   # a middle ground. Files live in /opt/geniepod/models/.
-whisper_port = 0                  # 0 = CLI mode; set to 8178 for server mode.
+whisper_port = 8178               # alpha.5: long-running whisper-server via
+                                  # genie-whisper.service. Model stays in GPU memory
+                                  # so per-utterance latency is ~50 ms instead of ~1.5 s
+                                  # cold-start. Set to 0 to fall back to spawning
+                                  # whisper-cli per call (debugging or no-server hosts).
 whisper_cli_path = "/opt/geniepod/bin/whisper-cli"
 stt_language = "auto"             # "auto" or a language code like "en", "es", "de", "zh".
 piper_model = "/opt/geniepod/voices/en_US-amy-medium.onnx"

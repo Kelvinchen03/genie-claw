@@ -26,6 +26,10 @@ use crate::voice::{aec, format, streaming, stt, tts};
 pub struct VoiceConfig {
     pub whisper_model: String,
     pub whisper_cli_path: String,
+    /// TCP port of a long-running whisper-server (managed externally,
+    /// typically by genie-whisper.service). Zero disables server mode and
+    /// falls back to spawning whisper-cli for every utterance.
+    pub whisper_port: u16,
     pub piper_model: String,
     pub piper_path: String,
     pub piper_pipe_mode: bool,
@@ -73,9 +77,22 @@ pub async fn run(
 
     eprintln!("[voice] Audio device: {}", audio_device);
 
-    let stt_engine =
+    let stt_engine = if voice_cfg.whisper_port > 0 {
+        tracing::info!(
+            port = voice_cfg.whisper_port,
+            model = %voice_cfg.whisper_model,
+            "STT using long-running whisper-server (model stays loaded in GPU)"
+        );
+        stt::SttEngine::server(&voice_cfg.whisper_model, voice_cfg.whisper_port)
+            .with_language_hint(Some(voice_cfg.stt_language.clone()))
+    } else {
+        tracing::info!(
+            cli = %voice_cfg.whisper_cli_path,
+            "STT using whisper-cli (model reloaded each call — set whisper_port to use server mode)"
+        );
         stt::SttEngine::cli_with_path(&voice_cfg.whisper_model, &voice_cfg.whisper_cli_path)
-            .with_language_hint(Some(voice_cfg.stt_language.clone()));
+            .with_language_hint(Some(voice_cfg.stt_language.clone()))
+    };
 
     let conv_id = conversations.create()?;
     tracing::info!(conv_id = %conv_id, "voice conversation started");
@@ -501,6 +518,7 @@ fn clone_voice_config(cfg: &VoiceConfig) -> VoiceConfig {
     VoiceConfig {
         whisper_model: cfg.whisper_model.clone(),
         whisper_cli_path: cfg.whisper_cli_path.clone(),
+        whisper_port: cfg.whisper_port,
         piper_model: cfg.piper_model.clone(),
         piper_path: cfg.piper_path.clone(),
         piper_pipe_mode: cfg.piper_pipe_mode,
