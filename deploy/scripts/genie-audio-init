@@ -22,17 +22,20 @@ LOG_TAG="genie-audio-init"
 log() { echo "[${LOG_TAG}] $*"; }
 warn() { echo "[${LOG_TAG}] WARN: $*" >&2; }
 
-# Wait for APE card to enumerate (up to 30 s). The card normally appears
-# during sound.target, but on slow boots or under heavy I/O it can lag.
+# Wait for the APE card to appear in /proc/asound/cards. This is a plain
+# file read so it works regardless of amixer permissions or quirks in
+# `amixer controls` output (which has been observed to return an empty
+# list in some non-systemd contexts even when controls are reachable via
+# `amixer cget`). The card normally appears during sound.target.
 for _ in $(seq 1 30); do
-    if amixer -c "$CARD" controls 2>/dev/null | grep -q "I2S2 Mux"; then
+    if grep -qE '^[[:space:]]*[0-9]+[[:space:]]+\[APE' /proc/asound/cards 2>/dev/null; then
         break
     fi
     sleep 1
 done
 
-if ! amixer -c "$CARD" controls 2>/dev/null | grep -q "I2S2 Mux"; then
-    warn "card $CARD has no I2S2 controls — overlay not applied? skipping route setup."
+if ! grep -qE '^[[:space:]]*[0-9]+[[:space:]]+\[APE' /proc/asound/cards 2>/dev/null; then
+    warn "card $CARD not enumerated in /proc/asound/cards — skipping route setup."
     exit 0
 fi
 
