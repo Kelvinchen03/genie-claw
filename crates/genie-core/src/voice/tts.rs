@@ -1,6 +1,58 @@
 use anyhow::Result;
+use std::sync::Mutex;
 use tokio::io::AsyncWriteExt;
 use tokio::process::{Child, Command};
+
+/// Phase markers for the first-voice-reply latency banner (issue #19).
+///
+/// The voice loop resets these to `None` before each cycle's TTS phase via
+/// `reset_first_audio_marker`. They're stamped at distinct moments inside
+/// `TtsEngine::speak()` so the banner can break "STT done -> first audio"
+/// into LLM-thinking-until-first-sentence vs first-sentence-Piper-synth.
+///
+/// - `FIRST_SPEAK_CALLED_AT` — first `speak()` entry, i.e. the moment
+///   `stream_and_speak` decided it has enough text to start synthesizing.
+/// - `FIRST_AUDIO_AT` — the moment the first PCM byte is about to hit
+///   `aplay`'s stdin. ALSA adds a few ms before audio is audible.
+static FIRST_SPEAK_CALLED_AT: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+static FIRST_AUDIO_AT: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+
+/// Reset the first-audio and first-speak timestamps. Call before the TTS
+/// phase of a voice cycle whose latency you want to measure.
+pub fn reset_first_audio_marker() {
+    if let Ok(mut g) = FIRST_AUDIO_AT.lock() {
+        *g = None;
+    }
+    if let Ok(mut g) = FIRST_SPEAK_CALLED_AT.lock() {
+        *g = None;
+    }
+}
+
+/// Read the first-audio timestamp captured since the last reset, if any.
+pub fn first_audio_at() -> Option<std::time::Instant> {
+    FIRST_AUDIO_AT.lock().ok().and_then(|g| *g)
+}
+
+/// Read the timestamp of the first `speak()` call since the last reset.
+pub fn first_speak_called_at() -> Option<std::time::Instant> {
+    FIRST_SPEAK_CALLED_AT.lock().ok().and_then(|g| *g)
+}
+
+fn mark_first_audio() {
+    if let Ok(mut g) = FIRST_AUDIO_AT.lock() {
+        if g.is_none() {
+            *g = Some(std::time::Instant::now());
+        }
+    }
+}
+
+fn mark_first_speak_called() {
+    if let Ok(mut g) = FIRST_SPEAK_CALLED_AT.lock() {
+        if g.is_none() {
+            *g = Some(std::time::Instant::now());
+        }
+    }
+}
 
 /// Piper TTS subprocess manager.
 ///
@@ -143,6 +195,13 @@ impl TtsEngine {
     /// Pipes text to Piper stdin, raw PCM stdout goes to aplay.
     /// Uses process pipes instead of shell to avoid escaping issues.
     pub async fn speak(&self, text: &str) -> Result<()> {
+        // Stamp the moment streaming::stream_and_speak decided to call speak()
+        // for the first time this cycle. With today's `chat_stream` that only
+        // happens after the full LLM response is collected, but a future real-
+        // streaming refactor (#26) will fire this earlier. The banner uses it
+        // to separate "LLM-thinking" from "first-sentence Piper synth".
+        mark_first_speak_called();
+
         let clean = text.replace('\n', " ");
         tracing::info!(text_len = text.len(), "speaking via Piper → aplay");
 
@@ -202,6 +261,10 @@ impl TtsEngine {
 
         if let Some(mut stdin) = aplay.stdin.take() {
             use tokio::io::AsyncWriteExt;
+            // TTFA marker for issue #19 latency banner: stamp the moment the
+            // first PCM byte is about to be written to aplay. ALSA's hardware
+            // buffer will turn this into audible audio within a few ms.
+            mark_first_audio();
             stdin.write_all(&pcm).await?;
         }
 
