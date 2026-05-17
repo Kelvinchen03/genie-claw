@@ -2,49 +2,6 @@
 
 ## Unreleased
 
-### Changed
-
-- Jetson deploy defaults flipped to `genie-ai-runtime v1.0.0` + Qwen3-4B
-  Q4_K_M (closes #52). `deploy/config/geniepod.toml` now ships with
-  `[services.llm].backend = "genie_ai_runtime"`,
-  `systemd_unit = "genie-ai-runtime.service"`, `llm_model_name = "qwen"`,
-  and `llm_model_path = /opt/geniepod/models/Qwen3-4B-Q4_K_M.gguf`.
-  `deploy/config/geniepod.dev.toml` stays on the `llama_cpp` path for
-  local x86/macOS development (explicit `backend = "llama_cpp"` instead
-  of relying on the workspace default). The
-  `LlmBackendKind::default` accordingly flips from `LlamaCpp` to
-  `GenieAiRuntime` in `crates/genie-common/src/config.rs`, and
-  `Governor::llm_service_unit`'s fallback flips to
-  `genie-ai-runtime.service` (`crates/genie-governor/src/governor.rs`).
-- `deploy/setup-jetson.sh` now picks the LLM units to enable from the
-  `[services.llm].backend` line in `geniepod.toml`: defaults to
-  `genie-ai-runtime` + `genie-ai-runtime-warmup`, falls back to
-  `genie-llm` + `genie-llm-warmup` when `backend = "llama_cpp"` (or
-  `"llama-cpp"`). The "Start services" footer prints the matching unit.
-  The Qwen3-4B Q4_K_M download is now the default model when invoked
-  without `--model`; `--model phi-4-mini` selects the prior default
-  as the explicit fallback. The cutover NOTE block from PR #46 still
-  surfaces on `--model phi-4-mini` re-runs (predicate flipped from
-  "not phi-4-mini" to "not qwen3-4b") with prompt-template /
-  systemd-unit guidance updated for the new default. Runtime install
-  remains opt-in via `--runtime genie-ai-runtime` (issue #54 / PR #56);
-  the setup script now points operators at that flag when
-  `jetson-llm-server` is missing instead of duplicating the build logic.
-- `deploy/systemd/genie-core.service` now orders
-  `After=… genie-ai-runtime.service genie-llm.service` with
-  `Wants=… genie-ai-runtime.service`, so `genie-core` waits for whichever
-  LLM unit the operator has enabled (the two units `Conflicts=` each
-  other, so only one is active at a time and the unused `After=` entry
-  is a no-op).
-- `deploy/systemd/genie-governor.service` adds
-  `/etc/systemd/system/genie-ai-runtime.service.d` to `ReadWritePaths=`
-  so the governor's drop-in writer can land context-size adjustments
-  on the new unit's config dir as well as the legacy
-  `genie-llm.service.d`.
-- `README.md` and `ARCHITECTURE.md` flip the "default vs selectable"
-  wording for the LLM backend (genie-ai-runtime is the Jetson default;
-  llama.cpp is the selectable fallback).
-
 ## 1.0.0-alpha.9 - 2026-05-18
 
 Alpha 9 is the **CI / supply-chain hardening + voice-frontend maturation**
@@ -63,8 +20,10 @@ Headlines:
   regressions are visible at a glance.
 - **LLM backend is now a config-driven facade** (#32, #35, #38, #39, #40,
   #43) — `[llm.backend]` selects `llama-cpp` or `genie-ai-runtime`. The
-  v1.0.0 `genie-ai-runtime` install pipeline ships in #56; the default
-  flip is tracked in #52.
+  v1.0.0 `genie-ai-runtime` install pipeline ships in #56, and the
+  Jetson deploy default flipped to `genie-ai-runtime` + Qwen3-4B Q4_K_M
+  in #55 (closes #52). `llama.cpp` + Phi-4-mini remain the one-line
+  fallback via `[services.llm].backend = "llama_cpp"`.
 - **Voice is now an opt-out Cargo feature** (#41, #57). Default builds
   are byte-identical for Jetson; `--no-default-features` produces a
   chat-only binary that compiles on macOS / Windows without ALSA.
@@ -74,8 +33,9 @@ Headlines:
 - **CI pipeline** (#34): fmt + clippy + test (#37), aarch64 Jetson
   cross-compile (#49), cargo-audit + cargo-deny supply-chain (#50),
   shellcheck + ruff for shell/Python (#51). All green on `main`.
-- **Opt-in Qwen3-4B** (#44, #46) alongside today's Phi-4-mini default;
-  recommended pairing is Qwen3-4B + `genie-ai-runtime`.
+- **Qwen3-4B Q4_K_M** is now the Jetson default model (#44, #46, #55);
+  Phi-4-mini Q4_K_M remains as the explicit fallback via
+  `setup-jetson.sh --model phi-4-mini`.
 
 Workspace version bumped `1.0.0-alpha.5` → `1.0.0-alpha.9` across all
 seven workspace crates.
@@ -302,6 +262,49 @@ seven workspace crates.
   `ggml_reshape_2d` when combined with `--flash-attn on` and the Phi-3/
   Phi-4 attention graph on aarch64 CUDA. Documented inline in the
   service unit; tracked upstream in llama.cpp.
+
+### Changed (Jetson default-backend flip — PR #55, closes #52)
+
+- Jetson deploy defaults flipped to `genie-ai-runtime v1.0.0` + Qwen3-4B
+  Q4_K_M. `deploy/config/geniepod.toml` now ships with
+  `[services.llm].backend = "genie_ai_runtime"`,
+  `systemd_unit = "genie-ai-runtime.service"`, `llm_model_name = "qwen"`,
+  and `llm_model_path = /opt/geniepod/models/Qwen3-4B-Q4_K_M.gguf`.
+  `deploy/config/geniepod.dev.toml` stays on the `llama_cpp` path for
+  local x86/macOS development (explicit `backend = "llama_cpp"` instead
+  of relying on the workspace default). The
+  `LlmBackendKind::default` accordingly flips from `LlamaCpp` to
+  `GenieAiRuntime` in `crates/genie-common/src/config.rs`, and
+  `Governor::llm_service_unit`'s fallback flips to
+  `genie-ai-runtime.service` (`crates/genie-governor/src/governor.rs`).
+- `deploy/setup-jetson.sh` now picks the LLM units to enable from the
+  `[services.llm].backend` line in `geniepod.toml`: defaults to
+  `genie-ai-runtime` + `genie-ai-runtime-warmup`, falls back to
+  `genie-llm` + `genie-llm-warmup` when `backend = "llama_cpp"` (or
+  `"llama-cpp"`). The "Start services" footer prints the matching unit.
+  The Qwen3-4B Q4_K_M download is now the default model when invoked
+  without `--model`; `--model phi-4-mini` selects the prior default
+  as the explicit fallback. The cutover NOTE block from PR #46 still
+  surfaces on `--model phi-4-mini` re-runs (predicate flipped from
+  "not phi-4-mini" to "not qwen3-4b") with prompt-template /
+  systemd-unit guidance updated for the new default. Runtime install
+  remains opt-in via `--runtime genie-ai-runtime` (issue #54 / PR #56);
+  the setup script now points operators at that flag when
+  `jetson-llm-server` is missing instead of duplicating the build logic.
+- `deploy/systemd/genie-core.service` now orders
+  `After=… genie-ai-runtime.service genie-llm.service` with
+  `Wants=… genie-ai-runtime.service`, so `genie-core` waits for whichever
+  LLM unit the operator has enabled (the two units `Conflicts=` each
+  other, so only one is active at a time and the unused `After=` entry
+  is a no-op).
+- `deploy/systemd/genie-governor.service` adds
+  `/etc/systemd/system/genie-ai-runtime.service.d` to `ReadWritePaths=`
+  so the governor's drop-in writer can land context-size adjustments
+  on the new unit's config dir as well as the legacy
+  `genie-llm.service.d`.
+- `README.md` and `ARCHITECTURE.md` flip the "default vs selectable"
+  wording for the LLM backend (genie-ai-runtime is the Jetson default;
+  llama.cpp is the selectable fallback).
 
 ## 1.0.0-alpha.5 - 2026-05-11
 
